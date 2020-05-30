@@ -1,0 +1,5 @@
+/files
+/tmp
+/__pycache__
+/ffmpeg-4.2.2-amd64-static
+config_*
