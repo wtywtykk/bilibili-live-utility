@@ -1,8 +1,9 @@
-from mirai import Mirai, Plain, AtAll, MessageChain, Friend, Member, Group
+from mirai import Mirai, Face, Plain, Image, AtAll, MessageChain, Friend, Member, Group
 import asyncio
 import threading
 import datetime
 import random
+import emoji
 import traceback
 
 class Plugin_QQ:
@@ -30,6 +31,13 @@ class Plugin_QQ:
                 Plain(text="机器人没有私聊功能")
             ])
             
+        def GetSelfName():
+            Names = Cfg.plugin_notifybot_say_selfname
+            if len(Names)>0:
+                return Names[random.randint(0, len(Names) - 1)]
+            else:
+                return ""
+
         def GetCalendarMessage():
             try:
                 TxtResult = []
@@ -71,34 +79,64 @@ class Plugin_QQ:
                 traceback.print_exc()
                 return "不知道咋回事，出错了"
                 
-        async def ProcessAnyLiveMsg(group, msgtxt):
+        async def ProcessAnyLiveMsg(group, msg):
+            msgtxt = msg.toString()
+            Matched = False
             for Keyword in Cfg.plugin_notifybot_recognise_selfname:
                 if Keyword in msgtxt:
                     if "播吗" in msgtxt:
-                        if (datetime.datetime.now()-self.LastAnyLiveReportTime).seconds > 60:
-                            await app.sendGroupMessage(group, GetCalendarMessage())
-                        self.LastAnyLiveReportTime = datetime.datetime.now()
+                        Matched = True
+                        break
+            for Keyword in Cfg.plugin_notifybot_anylive_keyword:
+                if Keyword in msgtxt:
+                    Matched = True
                     break
+            if Matched == True:
+                if (datetime.datetime.now()-self.LastAnyLiveReportTime[group.id]).seconds > 60:
+                    await app.sendGroupMessage(group, GetCalendarMessage())
+                self.LastAnyLiveReportTime[group.id] = datetime.datetime.now()
+                
+        async def ProcessConversations(group, msg):
+            msgtxt = msg.toString()
+            for Conv in Cfg.plugin_notifybot_conversations:
+                IsKeywordFound = False
+                for Keyword in Conv[0]:
+                    if Keyword in msgtxt:
+                        IsKeywordFound = True
+                        break
+                if IsKeywordFound == True:
+                    if len(Conv[1]) != 0:
+                        while True:
+                            RandItem = Conv[1][random.randint(0, len(Conv[1]) - 1)]
+                            if random.random() <= RandItem[0]:
+                                if RandItem[1] != "":
+                                    await app.sendGroupMessage(group, emoji.emojize(RandItem[1], use_aliases=True))
+                                break
+                    break
+        
+        async def ProcessRepeat(group, msg):
+            msgtxt = msg.toString()
+            Matched = False
+            for Keyword in Cfg.plugin_notifybot_repeat_keyword:
+                if Keyword in msgtxt:
+                    Matched = True
+                    break
+            if random.random() <= Cfg.plugin_notifybot_repeat_prob:
+                Matched = True
+            if Matched == True:
+                NewMsg = []
+                for i in msg:
+                    if type(i) == Face or type(i) == Plain or type(i) == Image:
+                        NewMsg.append(i)
+                if len(NewMsg):
+                    await app.sendGroupMessage(group, NewMsg)
                 
         async def event_gm(app: Mirai, group: Group, msg: MessageChain):
             try:
                 if Cfg.plugin_notifybot_group_number.__contains__(group.id):
-                    msgtxt = msg.toString()
-                    await ProcessAnyLiveMsg(group, msgtxt)
-                    for Conv in Cfg.plugin_notifybot_conversations:
-                        IsKeywordFound = False
-                        for Keyword in Conv[0]:
-                            if Keyword in msgtxt:
-                                IsKeywordFound = True
-                                break
-                        if IsKeywordFound == True:
-                            if len(Conv[1]) != 0:
-                                while True:
-                                    RandItem = Conv[1][random.randint(0, len(Conv[1]) - 1)]
-                                    if random.random() <= RandItem[0]:
-                                        await app.sendGroupMessage(group, RandItem[1])
-                                        break
-                            break
+                    await ProcessAnyLiveMsg(group, msg)
+                    await ProcessConversations(group, msg)
+                    await ProcessRepeat(group, msg)
             except Exception as e:
                 self.PrintLog("Exception in gm processing: " + repr(e))
                 traceback.print_exc()
@@ -112,12 +150,12 @@ class Plugin_QQ:
             for Grp in Cfg.plugin_notifybot_group_number:
                 if Cfg.plugin_notifybot_atall:
                     Message = [
-                        Plain(text="开播了！ " + self.RecorderInstance.GetRoomTitle() + "https://live.bilibili.com/" + self.RecorderInstance.room_id),
+                        Plain(text=GetSelfName() + "开播了！ " + self.RecorderInstance.GetRoomTitle() + "https://live.bilibili.com/" + self.RecorderInstance.room_id),
                         AtAll()
                     ]
                 else:
                     Message = [
-                        Plain(text="开播了！ " + self.RecorderInstance.GetRoomTitle() + "https://live.bilibili.com/" + self.RecorderInstance.room_id),
+                        Plain(text=GetSelfName() + "开播了！ " + self.RecorderInstance.GetRoomTitle() + "https://live.bilibili.com/" + self.RecorderInstance.room_id),
                     ]
                 try:
                     await app.sendGroupMessage(Grp, Message)
@@ -172,6 +210,8 @@ class Plugin_QQ:
         self.RecorderInstance.RegisterCallback("RecorderInstance", "OnLiveStart", ProcessLiveStartEvent)
         self.RecorderInstance.RegisterCallback("DiskSpaceMonitor", "OnWarning", DiskWarning)
         
-        self.LastAnyLiveReportTime = datetime.datetime.fromtimestamp(0)
+        self.LastAnyLiveReportTime = {}
+        for GrpNum in Cfg.plugin_notifybot_group_number:
+            self.LastAnyLiveReportTime[GrpNum] = datetime.datetime.fromtimestamp(0)
         
         app.run()

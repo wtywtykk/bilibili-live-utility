@@ -1,6 +1,7 @@
 import requests
 import time
 import random
+import datetime
 import traceback
 
 class RoomPollingClient:
@@ -67,14 +68,28 @@ class RoomPollingClient:
         calendar_data = {}
         roominfo = self.GetRoomInfo()
         calendar_url = "https://api.live.bilibili.com/xlive/web-ucenter/v2/calendar/GetProgramList"
-        response = self.common_request("GET", calendar_url, {"type": 3,"ruids": roominfo["uid"]}).json()
+        response = self.common_request("GET", calendar_url, {"type": 3, "ruids": roominfo["uid"]}).json()
         if response["code"] == 0:
             allprog = []
             for day in response["data"]["program_infos"].values():
                 for prog in day["program_list"]:
                     allprog.append({"ts": prog["start_time"],"title": prog["title"]})
-            calendar_data["programs"] = sorted(allprog, key=lambda p: p["ts"])
             calendar_data["now"] = response["data"]["timestamp"]
+        
+            NowTime = datetime.datetime.fromtimestamp(response["data"]["timestamp"])
+            Year = NowTime.year
+            Month = NowTime.month
+            Month = Month + 1
+            if Month > 12:
+                Year = Year + 1
+                Month = Month - 12
+            NxtMonthDate = datetime.date(Year, Month, 1)
+            response = self.common_request("GET", calendar_url, {"type": 3, "year_month": NxtMonthDate.strftime("%Y-%m"), "ruids": roominfo["uid"]}).json()
+            if response["code"] == 0:
+                for day in response["data"]["program_infos"].values():
+                    for prog in day["program_list"]:
+                        allprog.append({"ts": prog["start_time"],"title": prog["title"]})
+            calendar_data["programs"] = sorted(allprog, key=lambda p: p["ts"])
         return calendar_data
         
     def Run(self):

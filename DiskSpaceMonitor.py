@@ -9,7 +9,6 @@ class DiskSpaceMonitor:
         self.WarningEventFired = False
         self.CheckError = False
         self.OccupiedSpace = 0
-        threading.Thread(target = self.Run).start()
                 
     def PrintLog(self, content='None'):
         self.RecorderInstance.PrintLog("[" + __name__ + "] " + str(content))
