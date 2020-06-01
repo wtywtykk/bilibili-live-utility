@@ -80,6 +80,7 @@ class Plugin_QQ:
                 return "不知道咋回事，出错了"
                 
         async def ProcessAnyLiveMsg(group, msg):
+            Ret = False
             msgtxt = msg.toString()
             Matched = False
             for Keyword in Cfg.plugin_notifybot_recognise_selfname:
@@ -94,9 +95,12 @@ class Plugin_QQ:
             if Matched == True:
                 if (datetime.datetime.now()-self.LastAnyLiveReportTime[group.id]).seconds > 60:
                     await app.sendGroupMessage(group, GetCalendarMessage())
+                    Ret = True
                 self.LastAnyLiveReportTime[group.id] = datetime.datetime.now()
+            return Ret
                 
         async def ProcessConversations(group, msg):
+            Ret = False
             msgtxt = msg.toString()
             for Conv in Cfg.plugin_notifybot_conversations:
                 IsKeywordFound = False
@@ -111,10 +115,13 @@ class Plugin_QQ:
                             if random.random() <= RandItem[0]:
                                 if RandItem[1] != "":
                                     await app.sendGroupMessage(group, emoji.emojize(RandItem[1], use_aliases=True))
+                                    Ret = True
                                 break
                     break
+            return Ret
         
         async def ProcessRepeat(group, msg):
+            Ret = False
             msgtxt = msg.toString()
             Matched = False
             for Keyword in Cfg.plugin_notifybot_repeat_keyword:
@@ -135,13 +142,19 @@ class Plugin_QQ:
                         NewMsg.append(i)
                 if len(NewMsg):
                     await app.sendGroupMessage(group, NewMsg)
+                    Ret = True
+            return Ret
                 
         async def event_gm(app: Mirai, group: Group, msg: MessageChain):
             try:
                 if Cfg.plugin_notifybot_group_number.__contains__(group.id):
-                    await ProcessAnyLiveMsg(group, msg)
-                    await ProcessConversations(group, msg)
-                    await ProcessRepeat(group, msg)
+                    MsgSent = False
+                    if MsgSent == False:
+                        MsgSent = await ProcessAnyLiveMsg(group, msg)
+                    if MsgSent == False:
+                        MsgSent = await ProcessConversations(group, msg)
+                    if MsgSent == False:
+                        MsgSent = await ProcessRepeat(group, msg)
             except Exception as e:
                 self.PrintLog("Exception in gm processing: " + repr(e))
                 traceback.print_exc()
