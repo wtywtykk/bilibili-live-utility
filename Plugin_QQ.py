@@ -91,7 +91,7 @@ class Plugin_QQ:
             if IsInvolved(msg):
                 msgtxt = msg.toString()
                 if "撤回" in msgtxt:
-                    if self.LastSentMsgId[group.id] ！= 0：
+                    if self.LastSentMsgId[group.id] != 0:
                         await app.revokeMessage(self.LastSentMsgId[group.id])
                     self.LastSentMsgId[group.id] = 0
                     Ret = True
