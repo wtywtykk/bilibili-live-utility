@@ -1,4 +1,4 @@
-from mirai import Mirai, Face, Plain, Image, AtAll, MessageChain, Friend, Member, Group
+from mirai import Mirai, Face, Plain, Image, At, AtAll, MessageChain, Friend, Member, Group
 import asyncio
 import threading
 import datetime
@@ -79,6 +79,28 @@ class Plugin_QQ:
                 traceback.print_exc()
                 return "不知道咋回事，出错了"
                 
+        def IsInvolved(msg):
+            for i in msg:
+                if type(i) == At:
+                    if i.target == Cfg.plugin_notifybot_qq_number:
+                        return True
+            return False
+        
+        async def ProcessRevoke(group, msg):
+            Ret = False
+            if IsInvolved(msg):
+                msgtxt = msg.toString()
+                if "撤回" in msgtxt:
+                    if self.LastSentMsgId[group.id] ！= 0：
+                        await app.revokeMessage(self.LastSentMsgId[group.id])
+                    self.LastSentMsgId[group.id] = 0
+                    Ret = True
+            return Ret
+            
+        async def SendGroupMsg(group, msg):
+            BotMsg = await app.sendGroupMessage(group, msg)
+            self.LastSentMsgId[group.id] = BotMsg.messageId
+
         async def ProcessAnyLiveMsg(group, msg):
             Ret = False
             msgtxt = msg.toString()
@@ -94,7 +116,7 @@ class Plugin_QQ:
                     break
             if Matched == True:
                 if (datetime.datetime.now()-self.LastAnyLiveReportTime[group.id]).seconds > 60:
-                    await app.sendGroupMessage(group, GetCalendarMessage())
+                    await SendGroupMsg(group, GetCalendarMessage())
                     Ret = True
                 self.LastAnyLiveReportTime[group.id] = datetime.datetime.now()
             return Ret
@@ -114,7 +136,7 @@ class Plugin_QQ:
                             RandItem = Conv[1][random.randint(0, len(Conv[1]) - 1)]
                             if random.random() <= RandItem[0]:
                                 if RandItem[1] != "":
-                                    await app.sendGroupMessage(group, emoji.emojize(RandItem[1], use_aliases=True))
+                                    await SendGroupMsg(group, emoji.emojize(RandItem[1], use_aliases=True))
                                     Ret = True
                                 break
                     break
@@ -123,32 +145,36 @@ class Plugin_QQ:
         async def ProcessRepeat(group, msg):
             Ret = False
             msgtxt = msg.toString()
-            Matched = False
-            for Keyword in Cfg.plugin_notifybot_repeat_keyword:
-                if Keyword in msgtxt:
-                    if random.random() < Cfg.plugin_notifybot_repeat_keyword_prob:
-                        Matched = True
-                    break
-            if random.random() < Cfg.plugin_notifybot_repeat_prob:
-                Matched = True
-            for Keyword in Cfg.plugin_notifybot_repeat_blacklist:
-                if Keyword in msgtxt:
-                    Matched = False
-                    break
-            if Matched == True:
-                NewMsg = []
-                for i in msg:
-                    if type(i) == Face or type(i) == Plain or type(i) == Image:
-                        NewMsg.append(i)
-                if len(NewMsg):
-                    await app.sendGroupMessage(group, NewMsg)
-                    Ret = True
+            if msgtxt == self.LastRepeatMsg[group.id]:
+                Matched = False
+                for Keyword in Cfg.plugin_notifybot_repeat_keyword:
+                    if Keyword in msgtxt:
+                        if random.random() < Cfg.plugin_notifybot_repeat_keyword_prob:
+                            Matched = True
+                        break
+                if random.random() < Cfg.plugin_notifybot_repeat_prob:
+                    Matched = True
+                for Keyword in Cfg.plugin_notifybot_repeat_blacklist:
+                    if Keyword in msgtxt:
+                        Matched = False
+                        break
+                if Matched == True:
+                    NewMsg = []
+                    for i in msg:
+                        if type(i) == Face or type(i) == Plain or type(i) == Image:
+                            NewMsg.append(i)
+                    if len(NewMsg):
+                        await SendGroupMsg(group, NewMsg)
+                        Ret = True
+            self.LastRepeatMsg[group.id] = msgtxt
             return Ret
                 
         async def event_gm(app: Mirai, group: Group, msg: MessageChain):
             try:
                 if Cfg.plugin_notifybot_group_number.__contains__(group.id):
                     MsgSent = False
+                    if MsgSent == False:
+                        MsgSent = await ProcessRevoke(group, msg)
                     if MsgSent == False:
                         MsgSent = await ProcessAnyLiveMsg(group, msg)
                     if MsgSent == False:
@@ -176,7 +202,7 @@ class Plugin_QQ:
                         Plain(text=GetSelfName() + "开播了！ " + self.RecorderInstance.GetRoomTitle() + "https://live.bilibili.com/" + self.RecorderInstance.room_id),
                     ]
                 try:
-                    await app.sendGroupMessage(Grp, Message)
+                    await SendGroupMsg(Grp, Message)
                     await asyncio.sleep(2)
                 except Exception as e:
                     self.PrintLog("Send QQ live notify message failed: " + repr(e))
@@ -229,7 +255,11 @@ class Plugin_QQ:
         self.RecorderInstance.RegisterCallback("DiskSpaceMonitor", "OnWarning", DiskWarning)
         
         self.LastAnyLiveReportTime = {}
+        self.LastSentMsgId = {}
+        self.LastRepeatMsg = {}
         for GrpNum in Cfg.plugin_notifybot_group_number:
             self.LastAnyLiveReportTime[GrpNum] = datetime.datetime.fromtimestamp(0)
+            self.LastSentMsgId[GrpNum] = 0
+            self.LastRepeatMsg[GrpNum] = ""
         
         app.run()
