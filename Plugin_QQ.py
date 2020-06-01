@@ -119,11 +119,15 @@ class Plugin_QQ:
             Matched = False
             for Keyword in Cfg.plugin_notifybot_repeat_keyword:
                 if Keyword in msgtxt:
-                    if random.random() <= Cfg.plugin_notifybot_repeat_keyword_prob:
+                    if random.random() < Cfg.plugin_notifybot_repeat_keyword_prob:
                         Matched = True
                     break
-            if random.random() <= Cfg.plugin_notifybot_repeat_prob:
+            if random.random() < Cfg.plugin_notifybot_repeat_prob:
                 Matched = True
+            for Keyword in Cfg.plugin_notifybot_repeat_blacklist:
+                if Keyword in msgtxt:
+                    Matched = False
+                    break
             if Matched == True:
                 NewMsg = []
                 for i in msg:
