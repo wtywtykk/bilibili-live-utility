@@ -34,9 +34,14 @@ class PluginInterface():
                 self.RecorderInstance.PrintLog("[PluginInterface] Loading dependency: " + Dependency)
                 DependencyModule = __import__(Dependency, fromlist=[Dependency])
                 DepClass = getattr(DependencyModule, Dependency)(self.RecorderInstance)
-                threading.Thread(target = DepClass.Run).start()
                 self.DependencyClasses[Dependency] = DepClass
             Class.requirements[Dependency] = self.DependencyClasses[Dependency]
+    
+    def StartRequirements(self):
+        for DepClass in self.DependencyClasses.values():
+            t = threading.Thread(target = DepClass.Run)
+            t.daemon = True
+            t.start()
     
     def RegisterCallback(self, Module, Event, Callback):
         if not self.PluginCalls.__contains__(Module):

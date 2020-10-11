@@ -14,8 +14,8 @@ class Task_VideoFixer:
         try:
             if self.requirements["DiskSpaceMonitor"].IsDiskNearFull():
                 raise ZeroDivisionError("Disk near full! Aborting video convert!")
-            subprocess.call(self.RecorderInstance.GetConfig().ffmpeg_path + " -y -i \"" + PathGen.get(".flv") + "\" -acodec copy -vcodec copy \"" + PathGen.get_temp("fix.flv") + "\"",shell=True)
-            shutil.move(PathGen.get_temp("fix.flv"), PathGen.get("fix.flv"))
+            subprocess.call(self.RecorderInstance.GetConfig().ffmpeg_path + " -y -i \"" + PathGen.get(".flv") + "\" -acodec copy -vcodec copy \"" + PathGen.get_temp("fix.mp4") + "\"",shell=True)
+            shutil.move(PathGen.get_temp("fix.mp4"), PathGen.get("fix.mp4"))
         except Exception as e:
             self.PrintLog("Error in VideoFixer" + repr(e))
             traceback.print_exc()

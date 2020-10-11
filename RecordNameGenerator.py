@@ -17,6 +17,9 @@ class RecordNameGenerator:
         current_time = time.strftime('%Y%m%d_%H%M', current_struct_time)
         self.timestamp = current_time + '-' + str(int(round(t * 1000)))
         
+    def get_name(self, extension):
+        return self.timestamp + extension
+        
     def get(self, extension):
         c_directory=os.path.join(self.basedir, 'files', self.foldername, self.session_timestamp)
         if not os.path.exists(c_directory):

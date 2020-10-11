@@ -19,7 +19,7 @@ class Plugin_DamakuTimestamp:
             self.PrintLog("Reopening file")
             if self.fo:
                 self.fo.close()
-            self.fo = open(FileNameGen.get(".dmts.txt"), 'a')
+            self.fo = open(FileNameGen.get(".dmts.txt"), 'a', encoding="utf-8")
         except Exception as e:
             self.PrintLog("Open file error! " + repr(e))
             traceback.print_exc()
