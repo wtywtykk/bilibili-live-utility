@@ -1,4 +1,10 @@
-from mirai import Mirai, Face, Plain, Image, At, AtAll, MessageChain, Friend, Member, Group
+from graia.broadcast import Broadcast
+from graia.application import GraiaMiraiApplication, Session
+from graia.application.message.chain import MessageChain
+from graia.application.message.elements.internal import Face, Plain, Image, At, AtAll
+from graia.application.friend import Friend
+from graia.application.group import Group, Member
+
 import asyncio
 import threading
 import datetime
@@ -22,7 +28,24 @@ class Plugin_QQ:
         self.RecorderInstance.PrintLog("[" + __name__ + "] " + str(content))
 
     def MiraiRun(self):
-        async def event_fm(app: Mirai, friend: Friend, msg: MessageChain):
+        Cfg = self.RecorderInstance.GetConfig
+        
+        asyncio.set_event_loop(asyncio.new_event_loop())
+        loop = asyncio.get_event_loop()
+
+        bcc = Broadcast(loop=loop)
+        app = GraiaMiraiApplication(
+            broadcast=bcc,
+            connect_info=Session(
+                host="http://" + Cfg().plugin_notifybot_mirai_api_http_locate, # 填入 httpapi 服务运行的地址
+                authKey=Cfg().plugin_notifybot_authkey, # 填入 authKey
+                account=Cfg().plugin_notifybot_qq_number, # 你的机器人的 qq 号
+                websocket=True # Graia 已经可以根据所配置的消息接收的方式来保证消息接收部分的正常运作.
+            )
+        )
+
+        @bcc.receiver("FriendMessage")
+        async def event_fm(app: GraiaMiraiApplication, friend: Friend, msg: MessageChain):
             self.PrintLog("Receive friend message: " + str(msg))
             for Callback in self.RecorderInstance.GetCallbackCollection("QQInterface", "OnFriendMessage"):
                 try:
@@ -30,9 +53,9 @@ class Plugin_QQ:
                 except Exception as pe:
                     self.PrintLog("Plugin exception: " + repr(e))
                     traceback.print_exc()
-            await app.sendFriendMessage(friend, [
+            await app.sendFriendMessage(friend, MessageChain.create([
                 Plain(text="机器人没有私聊功能")
-            ])
+            ]))
             
         def GetSelfName():
             Names = Cfg().plugin_notifybot_say_selfname
@@ -83,16 +106,15 @@ class Plugin_QQ:
                 return "不知道咋回事，出错了"
                 
         def IsInvolved(msg):
-            for i in msg:
-                if type(i) == At:
-                    if i.target == Cfg().plugin_notifybot_qq_number:
-                        return True
+            for i in msg.get(At):
+                if i.target == Cfg().plugin_notifybot_qq_number:
+                    return True
             return False
         
         async def ProcessRevoke(group, msg):
             Ret = False
             if IsInvolved(msg):
-                msgtxt = msg.toString()
+                msgtxt = msg.asDisplay()
                 if "撤回" in msgtxt:
                     if self.LastSentMsgId[group.id] != 0:
                         await app.revokeMessage(self.LastSentMsgId[group.id])
@@ -101,12 +123,12 @@ class Plugin_QQ:
             return Ret
             
         async def SendGroupMsg(group, msg):
-            BotMsg = await app.sendGroupMessage(group, msg)
+            BotMsg = await app.sendGroupMessage(group, MessageChain.create(msg))
             self.LastSentMsgId[group] = BotMsg.messageId
 
         async def ProcessAnyLiveMsg(group, msg):
             Ret = False
-            msgtxt = msg.toString()
+            msgtxt = msg.asDisplay()
             Matched = False
             for Keyword in Cfg().plugin_notifybot_recognise_selfname:
                 if Keyword in msgtxt:
@@ -122,7 +144,7 @@ class Plugin_QQ:
                     break
             if Matched == True:
                 if (datetime.datetime.now()-self.LastAnyLiveReportTime[group.id]).seconds > 60:
-                    await SendGroupMsg(group.id, GetCalendarMessage())
+                    await SendGroupMsg(group.id, [Plain(GetCalendarMessage())])
                     Ret = True
                 self.LastAnyLiveReportTime[group.id] = datetime.datetime.now()
             return Ret
@@ -133,7 +155,7 @@ class Plugin_QQ:
             if Cfg().plugin_notifybot_conversation_blacklist.__contains__(SenderID):
                 if random.random() >= Cfg().plugin_notifybot_conversation_blacklist[SenderID]:
                     return Ret
-            msgtxt = msg.toString()
+            msgtxt = msg.asDisplay()
             for Conv in Cfg().plugin_notifybot_conversations:
                 IsKeywordFound = False
                 for Keyword in Conv[0]:
@@ -153,9 +175,9 @@ class Plugin_QQ:
                                     self.LastTalkTime[group.id] = datetime.datetime.now()
                                     if NewOvertalkCounter > Cfg().plugin_notifybot_overtalk_threshold:
                                         if self.OvertalkCounter[group.id] <= Cfg().plugin_notifybot_overtalk_threshold:
-                                            await SendGroupMsg(group.id, emoji.emojize(Cfg().plugin_notifybot_overtalk_word, use_aliases=True))
+                                            await SendGroupMsg(group.id, [Plain(emoji.emojize(Cfg().plugin_notifybot_overtalk_word, use_aliases=True))])
                                     else:
-                                        await SendGroupMsg(group.id, emoji.emojize(RandItem[1], use_aliases=True))
+                                        await SendGroupMsg(group.id, [Plain(emoji.emojize(RandItem[1], use_aliases=True))])
                                     self.OvertalkCounter[group.id] = NewOvertalkCounter
                                     Ret = True
                                 break
@@ -164,7 +186,7 @@ class Plugin_QQ:
         
         async def ProcessRepeat(group, msg):
             Ret = False
-            msgtxt = msg.toString()
+            msgtxt = msg.include(Plain, Face, Image).asSerializationString()
             if msgtxt == self.LastRepeatMsg[group.id]:
                 Matched = False
                 for Keyword in Cfg().plugin_notifybot_repeat_keyword:
@@ -179,17 +201,15 @@ class Plugin_QQ:
                         Matched = False
                         break
                 if Matched == True:
-                    NewMsg = []
-                    for i in msg:
-                        if type(i) == Face or type(i) == Plain or type(i) == Image:
-                            NewMsg.append(i)
+                    NewMsg = msg.include(Face, Plain, Image).__root__
                     if len(NewMsg):
                         await SendGroupMsg(group.id, NewMsg)
                         Ret = True
             self.LastRepeatMsg[group.id] = msgtxt
             return Ret
                 
-        async def event_gm(app: Mirai, group: Group, member: Member, msg: MessageChain):
+        @bcc.receiver("GroupMessage")
+        async def event_gm(app: GraiaMiraiApplication, group: Group, member: Member, msg: MessageChain):
             try:
                 if Cfg().plugin_notifybot_group_number.__contains__(group.id):
                     MsgSent = False
@@ -205,10 +225,11 @@ class Plugin_QQ:
                 self.PrintLog("Exception in gm processing: " + repr(e))
                 traceback.print_exc()
             
-        async def event_tm(app: Mirai, group: Group, member: Member, msg: MessageChain):
-            await app.sendTempMessage(group, member, [
+        @bcc.receiver("TempMessage")
+        async def event_tm(app: GraiaMiraiApplication, group: Group, member: Member, msg: MessageChain):
+            await app.sendTempMessage(group, member, MessageChain.create([
                 Plain(text="机器人没有私聊功能")
-            ])
+            ]))
         
         async def SendLiveOnMessageAsync():
             for Grp in Cfg().plugin_notifybot_group_number:
@@ -229,10 +250,7 @@ class Plugin_QQ:
 
         def SendLiveOnMessage():
             try:
-                asyncio.set_event_loop(asyncio.new_event_loop())
-                loop = asyncio.get_event_loop()
-                result = loop.run_until_complete(SendLiveOnMessageAsync())
-                loop.close()
+                fut=asyncio.run_coroutine_threadsafe(SendLiveOnMessageAsync(),loop)
             except Exception as e:
                 self.PrintLog("Send QQ live notify message failed: " + repr(e))
                 traceback.print_exc()
@@ -245,7 +263,9 @@ class Plugin_QQ:
         async def SendDiskWarningMessageAsync():
             for MgrQQ in Cfg().plugin_notifybot_manager_qq_number:
                 try:
-                    await app.sendFriendMessage(MgrQQ, "磁盘空间紧张！")   
+                    await app.sendFriendMessage(MgrQQ, MessageChain.create([
+                        Plain(text="磁盘空间紧张！")
+                    ]))   
                     await asyncio.sleep(2)
                 except Exception as e:
                     self.PrintLog("Send disk warning message failed: " + repr(e))
@@ -253,25 +273,13 @@ class Plugin_QQ:
         
         def DiskWarning():
             try:
-                asyncio.set_event_loop(asyncio.new_event_loop())
-                loop = asyncio.get_event_loop()
-                result = loop.run_until_complete(SendDiskWarningMessageAsync())
-                loop.close()
+                fut=asyncio.run_coroutine_threadsafe(SendDiskWarningMessageAsync(),loop)
             except Exception as e:
                 self.PrintLog("Send disk warning message failed: " + repr(e))
                 traceback.print_exc()
         
-        Cfg = self.RecorderInstance.GetConfig
-                
-        app = Mirai(f"mirai://{Cfg().plugin_notifybot_mirai_api_http_locate}?authKey={Cfg().plugin_notifybot_authkey}&qq={Cfg().plugin_notifybot_qq_number}")
-        app.receiver("FriendMessage")(event_fm)
-        app.receiver("GroupMessage")(event_gm)
-        app.receiver("TempMessage")(event_tm)
-        
         self.app = app
-        
-        asyncio.set_event_loop(asyncio.new_event_loop())
-        
+
         self.RecorderInstance.RegisterCallback("RecorderInstance", "OnLiveStart", ProcessLiveStartEvent)
         self.RecorderInstance.RegisterCallback("DiskSpaceMonitor", "OnWarning", DiskWarning)
         
@@ -286,5 +294,5 @@ class Plugin_QQ:
             self.OvertalkCounter[GrpNum] = 0
             self.LastSentMsgId[GrpNum] = 0
             self.LastRepeatMsg[GrpNum] = ""
-        
-        app.run()
+
+        app.launch_blocking()
